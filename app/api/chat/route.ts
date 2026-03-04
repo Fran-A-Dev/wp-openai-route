@@ -519,8 +519,17 @@ export async function POST(req: Request) {
         });
         controller.close();
       } catch (error) {
+        // Log full error server-side for debugging
+        console.error("[API Error]", error);
+
+        // Send sanitized error to client
         const message =
-          error instanceof Error ? error.message : "Unexpected server error.";
+          process.env.NODE_ENV === "production"
+            ? "An error occurred while processing your request."
+            : error instanceof Error
+              ? error.message
+              : "Unexpected server error.";
+
         send("error", { message });
         send("done", { ok: false });
         controller.close();
