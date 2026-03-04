@@ -61,13 +61,6 @@ function shouldHandleMoreQuery(input: string): boolean {
   return /\b(more|next page|next results|more results|show more)\b/i.test(input);
 }
 
-function isSearchIntent(input: string): boolean {
-  if (shouldHandleMoreQuery(input)) {
-    return false;
-  }
-  return /\b(list|find|search|show)\b/i.test(input);
-}
-
 function shouldHandleSummarizeNth(
   input: string,
 ): { index: number } | undefined {
@@ -105,364 +98,6 @@ function shouldHandleSummarizeNth(
   }
 
   return { index: parsed - 1 };
-}
-
-function inferFilterFromMessage(input: string): string | undefined {
-  const lower = input.toLowerCase();
-  const parts: string[] = [];
-
-  if (!/\ball content types?\b/.test(lower)) {
-    if (/\bpages?\b/.test(lower)) {
-      parts.push("post_type:page");
-    } else if (/\bposts?\b/.test(lower)) {
-      parts.push("post_type:post");
-    }
-  }
-
-  if (/\bpublished\b/.test(lower)) {
-    parts.push("status:published");
-  } else if (/\bdraft(s)?\b/.test(lower)) {
-    parts.push("status:draft");
-  }
-
-  if (parts.length === 0) {
-    return undefined;
-  }
-
-  return parts.join(" AND ");
-}
-
-function inferQueryFromMessage(input: string): string {
-  const forMatch = input.match(/\bfor\s+(.+)$/i);
-  if (forMatch?.[1]) {
-    return forMatch[1].replace(/[.?!]+$/, "").trim();
-  }
-
-  let cleaned = input
-    .replace(
-      /\b(can|could|would|please|give|me|you|a|an|the|in|this|wp|admin)\b/gi,
-      "",
-    )
-    .replace(/\b(list|find|search|show)\b/gi, "")
-    .replace(/\b(posts?|pages?)\b/gi, "")
-    .replace(/\b(published|drafts?)\b/gi, "")
-    .replace(/\b(return links?|only|all indexed content)\b/gi, "")
-    .replace(/\b(and|with)\s*$/i, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[.?!]+$/, "");
-
-  cleaned = cleaned
-    .replace(/^(related to|about|regarding)\s+/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (cleaned) {
-    return cleaned;
-  }
-
-  const lower = input.toLowerCase();
-  if (/\bposts?\b/.test(lower)) {
-    return "post";
-  }
-  if (/\bpages?\b/.test(lower)) {
-    return "page";
-  }
-  return "content";
-}
-
-function isBroadListingRequest(input: string): boolean {
-  const lower = input.toLowerCase();
-  const hasListingVerb = /\b(list|show|give me|all)\b/.test(lower);
-  const hasCollectionNoun = /\b(posts?|pages?|content)\b/.test(lower);
-  if (!hasListingVerb || !hasCollectionNoun) {
-    return false;
-  }
-
-  // If the inferred query has a specific topic, keep topical search behavior.
-  const inferred = inferQueryFromMessage(input).toLowerCase();
-  const genericQueries = new Set(["post", "page", "content", "published", "draft"]);
-  return genericQueries.has(inferred);
-}
-
-function isGenericQuery(query: string): boolean {
-  return new Set(["post", "page", "content", "published", "draft"]).has(
-    query.toLowerCase().trim(),
-  );
-}
-
-function shouldApplyStrictTopicalFilter(userMessage: string): boolean {
-  return !/\bsearch all indexed content for\b/i.test(userMessage);
-}
-
-function buildTopicalTerms(query: string): string[] {
-  const stopwords = new Set([
-    "you",
-    "related",
-    "about",
-    "regarding",
-    "with",
-    "from",
-    "this",
-    "that",
-    "the",
-    "and",
-    "or",
-    "to",
-    "of",
-    "in",
-    "on",
-    "all",
-    "indexed",
-    "content",
-    "search",
-  ]);
-
-  const rawWords = query
-    .toLowerCase()
-    .split(/\s+/)
-    .map((t) => t.replace(/[^a-z0-9]/g, ""))
-    .filter((t) => t.length >= 2);
-
-  const words = rawWords.filter((t) => !stopwords.has(t));
-
-  const unique = Array.from(new Set(words));
-
-  // Add acronym from the full phrase (including stopwords), e.g. "return of the jedi" -> "rotj".
-  const acronym = rawWords.map((w) => w[0]).join("");
-  if (acronym.length >= 3) {
-    unique.push(acronym);
-  }
-
-  return Array.from(new Set(unique));
-}
-
-function filterSemanticResults(
-  results: SearchResultItem[],
-  query: string,
-): SearchResultItem[] {
-  const terms = buildTopicalTerms(query);
-  if (terms.length === 0) {
-    return results;
-  }
-
-  const matchers = terms.map(
-    (term) => new RegExp(`(^|[^a-z0-9])${term}([^a-z0-9]|$)`, "i"),
-  );
-
-  const filtered = results.filter((item) => {
-    const haystack = [
-      typeof item.title === "string" ? item.title : "",
-      typeof item.snippet === "string" ? item.snippet : "",
-      typeof item.url === "string" ? item.url : "",
-    ]
-      .join(" ")
-      .toLowerCase();
-
-    return matchers.some((matcher) => matcher.test(haystack));
-  });
-
-  return filtered;
-}
-
-function filterTopicalResults(
-  results: SearchResultItem[],
-  query: string,
-): SearchResultItem[] {
-  const normalized = query.toLowerCase().trim();
-  if (!normalized || isGenericQuery(normalized)) {
-    return results;
-  }
-
-  const terms = buildTopicalTerms(normalized);
-
-  if (terms.length === 0) {
-    return results;
-  }
-
-  const termMatchers = terms.map(
-    (term) => new RegExp(`(^|[^a-z0-9])${term}([^a-z0-9]|$)`, "i"),
-  );
-
-  const filtered = results.filter((item) => {
-    const haystack = [
-      typeof item.title === "string" ? item.title : "",
-      typeof item.snippet === "string" ? item.snippet : "",
-      typeof item.url === "string" ? item.url : "",
-    ]
-      .join(" ")
-      .toLowerCase();
-
-    return termMatchers.some((matcher) => matcher.test(haystack));
-  });
-
-  return filtered;
-}
-
-function listingQueryFromMessage(input: string): string {
-  const lower = input.toLowerCase();
-  if (/\bpublished\b/.test(lower)) {
-    return "published";
-  }
-  if (/\bdraft(s)?\b/.test(lower)) {
-    return "draft";
-  }
-  if (/\bposts?\b/.test(lower)) {
-    return "post";
-  }
-  if (/\bpages?\b/.test(lower)) {
-    return "page";
-  }
-  return "content";
-}
-
-async function runBroadListingSearch(
-  userMessage: string,
-  mcpClient: SmartSearchMcpClient,
-  lastSearchState: {
-    query?: string;
-    filter?: string;
-    limit?: number;
-    offset?: number;
-    results?: SearchResultItem[];
-  },
-): Promise<{
-  results: SearchResultItem[];
-  attempts: Array<{ query: string; filter?: string; count: number; offset: number }>;
-}> {
-  const query = listingQueryFromMessage(userMessage);
-  const filter = inferFilterFromMessage(userMessage);
-  const limit = DEFAULT_LIMIT;
-  const maxPages = 3;
-  const attempts: Array<{ query: string; filter?: string; count: number; offset: number }> = [];
-  const seen = new Set<string>();
-  const merged: SearchResultItem[] = [];
-
-  for (let page = 0; page < maxPages; page += 1) {
-    const offset = page * limit;
-    const result = (await executeTool(
-      "smart_search_search",
-      {
-        query,
-        filter,
-        limit,
-        offset,
-      },
-      { mcpClient, lastSearchState },
-    )) as { results?: SearchResultItem[] };
-
-    const pageResults = result.results ?? [];
-    attempts.push({
-      query,
-      filter,
-      count: pageResults.length,
-      offset,
-    });
-
-    for (const row of pageResults) {
-      const uniqueKey =
-        (typeof row.id === "string" && row.id) ||
-        (typeof row.url === "string" && row.url) ||
-        (typeof row.title === "string" && row.title) ||
-        JSON.stringify(row);
-
-      if (!seen.has(uniqueKey)) {
-        seen.add(uniqueKey);
-        merged.push(row);
-      }
-    }
-
-    if (pageResults.length < limit) {
-      break;
-    }
-  }
-
-  if (merged.length > 0) {
-    lastSearchState.query = query;
-    lastSearchState.filter = filter;
-    lastSearchState.limit = limit;
-    lastSearchState.results = merged;
-  }
-
-  return { results: merged, attempts };
-}
-
-async function runSearchWithFallback(
-  userMessage: string,
-  mcpClient: SmartSearchMcpClient,
-  lastSearchState: {
-    query?: string;
-    filter?: string;
-    limit?: number;
-    offset?: number;
-    results?: SearchResultItem[];
-  },
-): Promise<{
-  results: SearchResultItem[];
-  attempts: Array<{ query: string; filter?: string; count: number }>;
-}> {
-  const inferredFilter = inferFilterFromMessage(userMessage);
-  const inferredQuery = inferQueryFromMessage(userMessage);
-  const limit = DEFAULT_LIMIT;
-  const attempts: Array<{ query: string; filter?: string; count: number }> = [];
-
-  const first = (await executeTool(
-    "smart_search_search",
-    {
-      query: inferredQuery,
-      filter: inferredFilter,
-      limit,
-      offset: 0,
-    },
-    { mcpClient, lastSearchState },
-  )) as { results?: SearchResultItem[] };
-  attempts.push({
-    query: inferredQuery,
-    filter: inferredFilter,
-    count: (first.results ?? []).length,
-  });
-
-  if ((first.results ?? []).length > 0) {
-    return { results: first.results ?? [], attempts };
-  }
-
-  // Retry without filter when index filtering differs from assumptions.
-  if (inferredFilter) {
-    const second = (await executeTool(
-      "smart_search_search",
-      {
-        query: inferredQuery,
-        limit,
-        offset: 0,
-      },
-      { mcpClient, lastSearchState },
-    )) as { results?: SearchResultItem[] };
-    attempts.push({
-      query: inferredQuery,
-      count: (second.results ?? []).length,
-    });
-
-    if ((second.results ?? []).length > 0) {
-      return { results: second.results ?? [], attempts };
-    }
-  }
-
-  // Final retry with the full user message as the query.
-  const third = (await executeTool(
-    "smart_search_search",
-    {
-      query: userMessage,
-      limit,
-      offset: 0,
-    },
-    { mcpClient, lastSearchState },
-  )) as { results?: SearchResultItem[] };
-  attempts.push({
-    query: userMessage,
-    count: (third.results ?? []).length,
-  });
-
-  return { results: third.results ?? [], attempts };
 }
 
 async function openAiChatCompletion(
@@ -591,16 +226,16 @@ function normalizeHistory(history: unknown): ClientMessage[] {
 
 function buildSystemPrompt(): string {
   return [
-    "You are WP Admin Copilot for retrieval only.",
-    "You can only use Smart Search MCP tools smart_search_search and smart_search_fetch.",
-    "Never claim to access users, roles, plugins, settings, or any non-indexed admin data.",
-    "If asked for non-indexed admin data, clearly explain this limitation.",
-    "For list/find/search requests, you must call smart_search_search first.",
-    "For post type filters: posts -> post_type:post, pages -> post_type:page.",
-    "If user asks all content types, do not force post_type filter.",
-    "If user asks for more results, continue search by increasing offset by limit.",
-    "If user asks to summarize a specific result, call smart_search_fetch with that result id.",
-    "Never fabricate titles or URLs. Use only tool output values.",
+    "You are WP Admin Copilot for indexed content retrieval.",
+    "You have access to Smart Search AI MCP with semantic/hybrid search capabilities.",
+    "Available tools: smart_search_search (searches content) and smart_search_fetch (retrieves full document by ID).",
+    "IMPORTANT: Smart Search AI uses vector/semantic search. Pass natural language queries directly to smart_search_search.",
+    "Do NOT use filters unless explicitly needed. The 'query' parameter accepts full natural language.",
+    "Examples: 'Return of the Jedi', 'Star Wars movies', 'posts about AI'.",
+    "Smart Search AI handles semantic understanding, acronyms, and typos automatically.",
+    "Present results with title, URL, and snippet. Never invent or modify these values.",
+    "Use smart_search_fetch with a document id when users ask to summarize a specific result.",
+    "If asked about users, roles, plugins, or settings, explain you only have access to indexed content.",
   ].join(" ");
 }
 
@@ -706,60 +341,7 @@ export async function POST(req: Request) {
         const mcpClient = mcpClientFromEnv();
         send("status", { stage: "thinking" });
 
-        // Deterministic search path to guarantee Smart Search tool usage for search intents.
-        if (isSearchIntent(userMessage)) {
-          send("delta", { text: "Here are the matching indexed results:\n\n" });
-          const broadMode = isBroadListingRequest(userMessage);
-          const searchData = broadMode
-            ? await runBroadListingSearch(userMessage, mcpClient, lastSearchState)
-            : await runSearchWithFallback(userMessage, mcpClient, lastSearchState);
-          const inferredQuery = inferQueryFromMessage(userMessage);
-          const shouldStrictFilter = shouldApplyStrictTopicalFilter(userMessage);
-          const results =
-            broadMode
-              ? searchData.results
-              : shouldStrictFilter
-                ? filterTopicalResults(searchData.results, inferredQuery)
-                : filterSemanticResults(searchData.results, inferredQuery);
-          const { attempts } = searchData;
-
-          if (results.length === 0) {
-            send("delta", { text: "No indexed results found." });
-            if (process.env.NODE_ENV !== "production") {
-              send("delta", {
-                text: `\n\n[debug] search attempts: ${JSON.stringify(attempts)}`,
-              });
-            }
-          } else {
-            for (let i = 0; i < results.length; i += 1) {
-              const r = results[i];
-              const lines = [`${i + 1}.`];
-              if (typeof r.title === "string" && r.title.trim()) {
-                lines.push(r.title.trim());
-              }
-              if (typeof r.url === "string" && r.url.trim()) {
-                lines.push(r.url.trim());
-              }
-              if (
-                typeof r.snippet === "string" &&
-                r.snippet.trim() &&
-                r.snippet.trim() !== "..."
-              ) {
-                lines.push(r.snippet.trim());
-              }
-              send("delta", { text: `${lines.join("\n")}\n\n` });
-            }
-          }
-
-          send("done", {
-            ok: true,
-            state: { lastSearch: lastSearchState },
-          });
-          controller.close();
-          return;
-        }
-
-        // Deterministic support for pagination requests.
+        // Deterministic guard: Handle pagination requests.
         if (shouldHandleMoreQuery(userMessage) && lastSearchState.query) {
           const nextLimit = lastSearchState.limit ?? DEFAULT_LIMIT;
           const nextOffset = (lastSearchState.offset ?? 0) + nextLimit;
@@ -768,25 +350,18 @@ export async function POST(req: Request) {
             "smart_search_search",
             {
               query: lastSearchState.query,
-              filter: lastSearchState.filter,
               limit: nextLimit,
               offset: nextOffset,
             },
             { mcpClient, lastSearchState },
           );
 
-          const summary = {
-            message:
-              "Fetched more results using Smart Search MCP with increased offset.",
-            toolResult,
-          };
-
           send("delta", { text: "Here are more results:\n\n" });
           const results =
             (toolResult as { results?: SearchResultItem[] }).results ?? [];
 
           if (results.length === 0) {
-            send("delta", { text: "No additional results were found." });
+            send("delta", { text: "No additional results found." });
           } else {
             for (let i = 0; i < results.length; i += 1) {
               const r = results[i];
@@ -811,19 +386,18 @@ export async function POST(req: Request) {
           send("done", {
             ok: true,
             state: { lastSearch: lastSearchState },
-            meta: summary,
           });
           controller.close();
           return;
         }
 
-        // Deterministic support for summarize nth result requests.
+        // Deterministic guard: Handle summarize nth result requests.
         const nthSummary = shouldHandleSummarizeNth(userMessage);
         if (nthSummary && Array.isArray(lastSearchState.results)) {
           const candidate = lastSearchState.results[nthSummary.index];
           if (!candidate?.id) {
             send("delta", {
-              text: "I could not find that result id in the previous search results.",
+              text: "That result is not available in the previous search results.",
             });
             send("done", {
               ok: true,
@@ -843,18 +417,18 @@ export async function POST(req: Request) {
             {
               role: "system",
               content:
-                "Summarize the provided fetched Smart Search document faithfully. Do not invent fields.",
+                "Summarize the provided document concisely. Use only information from the document.",
             },
             {
               role: "user",
-              content: `Please summarize this fetched result:\n${JSON.stringify(fetchResult)}`,
+              content: `Summarize this document:\n${JSON.stringify(fetchResult)}`,
             },
           ];
 
           const completion = await openAiChatCompletion(promptMessages, model, []);
           const text =
             completion?.choices?.[0]?.message?.content ??
-            "I fetched the document but could not generate a summary.";
+            "Unable to generate summary.";
 
           for (const chunk of chunkText(text)) {
             send("delta", { text: chunk });
@@ -868,19 +442,18 @@ export async function POST(req: Request) {
           return;
         }
 
+        // All other queries: Use OpenAI tool calling with Smart Search AI semantic search.
+
         const messages: OpenAIMessage[] = [
           { role: "system", content: buildSystemPrompt() },
           ...history.map((h) => ({ role: h.role, content: h.content })),
-          {
-            role: "assistant",
-            content: `Previous search state: ${JSON.stringify(lastSearchState)}`,
-          },
           { role: "user", content: userMessage },
         ];
 
         let finalText = "";
+        const maxIterations = 5;
 
-        for (let i = 0; i < 6; i += 1) {
+        for (let i = 0; i < maxIterations; i += 1) {
           const completion = await openAiChatCompletion(messages, model, OPENAI_TOOLS);
           const choice = completion?.choices?.[0];
           const msg = choice?.message;
@@ -901,12 +474,12 @@ export async function POST(req: Request) {
 
           const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
           if (toolCalls.length === 0) {
-            finalText = msg.content ?? "I could not produce a response.";
+            finalText = msg.content ?? "No response generated.";
             break;
           }
 
           send("status", {
-            stage: "tool_call",
+            stage: "searching",
             toolNames: toolCalls.map((tc: { function: { name: string } }) => tc.function.name),
           });
 
@@ -933,8 +506,7 @@ export async function POST(req: Request) {
         }
 
         if (!finalText) {
-          finalText =
-            "I could not complete the request within the tool-calling limit. Please refine your query.";
+          finalText = "Unable to complete request. Please try rephrasing your query.";
         }
 
         for (const chunk of chunkText(finalText)) {
