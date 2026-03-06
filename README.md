@@ -31,6 +31,41 @@ WordPress Content (indexed)
 - 🔐 **Secure**: CORS + token authentication
 - 📡 **Streaming**: Server-Sent Events for real-time responses
 
+## Example Prompts
+
+Here are some effective prompt patterns to try with the WP Admin Copilot. **Note:** These examples use sample topics (like "Star Wars", "web development", etc.) - replace them with topics from **your own WordPress content**.
+
+### Content Discovery
+- "Find all posts about [your topic]" (e.g., "Star Wars", "product launches", "company news")
+- "Show me recent articles on [your subject]" (e.g., "web development", "marketing tips")
+- "What content do I have about [your theme]?" (e.g., "artificial intelligence", "customer success")
+- "Find posts tagged with [your tag]" (e.g., "tutorial", "case-study")
+
+### Semantic Search
+- "Content related to [your concept]" (e.g., "customer testimonials", "sustainability")
+- "Articles discussing [your topic]" (e.g., "performance optimization", "team collaboration")
+- "Posts that mention [your theme]" (e.g., "user experience design", "data privacy")
+- "Find anything about [your subject]" (e.g., "e-commerce strategies", "remote work")
+
+### Specific Retrieval
+- "Show me the most recent blog post"
+- "Find the [page name] page" (e.g., "privacy policy", "contact us")
+- "What posts were published last month?"
+- "Get the [page name] content" (e.g., "about us", "services")
+
+### Follow-up Questions
+After getting search results, you can ask:
+- "Summarize the first result"
+- "Show me more details about the third post"
+- "What are the key points from these articles?"
+- "Can you find similar content?"
+
+### Tips for Best Results
+- Use natural language - the AI understands conversational queries
+- Be specific about what you're looking for
+- Ask follow-up questions to refine results
+- The semantic search understands context and meaning, not just keywords
+
 ## Setup
 
 ### Prerequisites
@@ -194,3 +229,4 @@ See [reference.md](./reference.md) for detailed API documentation and examples.
 ## License
 
 Private project.
+# wp-openai-route
